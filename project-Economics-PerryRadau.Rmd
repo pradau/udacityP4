@@ -1,0 +1,941 @@
+Relationships between U.S. economic indicators, recessions and stock prices by Perry Radau
+========================================================
+```{r global_options, include=FALSE} 
+knitr::opts_chunk$set(fig.width=12, 
+  fig.height=8, fig.path='Figs/', echo=FALSE, warning=FALSE, message=FALSE)
+
+```
+<br>
+This project is an exploration of U.S. economic indicators and how they may be used to predict recessions and perhaps stock market declines.  I will look at three indicators: retail sales changes, industrial production changes, and Treasury spread (the difference between short and long-term government bond rates). I will illustrate some relationships between these factors, recession periods and stock market (S&P 500) prices since 1970.
+<br>
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+#Author: Perry Radau
+#Copyright: February 3, 2016
+
+#initialize with loading libs and global variables that are required later.
+library(ggplot2)
+
+#install Technical Trade Rules package
+#install.packages("devtools")
+#install.packages("TTR")
+library(TTR)
+
+#for dealing with dates in time series.
+library(lubridate)
+
+#the start date of the stored data
+start_date = "1950-01-01"
+#the start date for plots
+plot_start_date = "1970-01-01"
+
+theme_set(theme_minimal(15))
+
+```
+
+```{r echo=FALSE, Load_the_Data}
+# Load the Data
+# Note: In all cases I'm exporting data from public websites as monthly time series, with csv format (or xls if csv not available).
+
+### Retail Sales
+# RRSFS_PC1	Real Retail and Food Services Sales, Percent Change from Year Ago, Monthly, Seasonally Adjusted	
+# RSALES_PC1	Real Retail Sales (DISCONTINUED), Percent Change from Year Ago, Monthly, Seasonally Adjusted	
+# Data source:
+# FRED Graph Observations
+#Federal Reserve Economic Data
+#Link: https://research.stlouisfed.org/fred2/graph/?g=3asR
+# The data was exported from FRED website as xls file. The only pre-processing was to convert to csv format.
+# Force the column data types, ensure "#N/A" is converted to R's "NA" value, and skip some header rows in the spreadsheet.
+pf <- read.csv('~/R-project/FRED-retail-sales.csv',
+               colClasses = c("Date", "numeric", "numeric"), 
+               na.strings=c("#N/A"), skip=11) 
+
+### Industrial Production Growth
+#Link: https://research.stlouisfed.org/fred2/graph/?g=3atC
+# INDPRO_PC1	Industrial Production Index, Percent Change from Year Ago, Monthly, Seasonally Adjusted
+# The data was exported from FRED website as xls file. The only pre-processing was to convert to csv format.
+# Force the column data types, ensure "#N/A" is converted to R's "NA" value, and skip some header rows in the spreadsheet.
+ip <- read.csv('~/R-project/FRED-industrial-production.csv',
+               colClasses = c("Date", "numeric"), 
+               na.strings=c("#N/A"), skip=10)
+
+### S&P 500 stock index
+# Exported as monthly time series. The pre-processing was to convert dates from 'yy-mm-dd' to 'yyyy-mm-dd' format.
+#Link: http://finance.yahoo.com/q/hp?s=^GSPC&a=00&b=3&c=1950&d=00&e=20&f=2016&g=m
+sp0 <- read.csv('~/R-project/SP500-hatGSPC.csv',
+               colClasses = c("Date", "numeric", "numeric", "numeric", 
+                              "numeric", "numeric", "numeric"), 
+               na.strings=c("#N/A"))
+
+### Recessions
+# Manually entered the data (pairs of Start and End dates of recessions) from info at:
+# Link: https://en.wikipedia.org/wiki/List_of_recessions_in_the_United_States
+#NOTE: Be sure the dates are in YYYY-MM-DD format.
+rdf <- read.csv('~/R-project/recessions.csv', 
+                colClasses = c("Date", "Date"), skip=1)
+
+### 10 Year Treasury Rate
+#https://research.stlouisfed.org/fred2/series/WGS10YR#
+# WGS10YR	10-Year Treasury Constant Maturity Rate, Percent, Monthly, Not Seasonally Adjusted
+# The data was exported from FRED website as xls file. The only pre-processing was to convert to csv format.
+# Force the column data types, ensure "#N/A" is converted to R's "NA" value, and skip some header rows in the spreadsheet.
+dft10 <- read.csv('~/R-project/FRED-10yr treasury rate.csv',
+                  colClasses = c("Date", "numeric"), 
+                  na.strings=c("#N/A"), skip=10)
+
+### 3 Month Treasury Rate
+#https://research.stlouisfed.org/fred2/series/TB3MS#
+# TB3MS	3-Month Treasury Bill: Secondary Market Rate, Percent, Monthly, Not Seasonally Adjusted
+# The data was exported from FRED website as xls file. The only pre-processing was to convert to csv format.
+# Force the column data types, ensure "#N/A" is converted to R's "NA" value, and skip some header rows in the spreadsheet.
+dft3 <- read.csv('~/R-project/FRED-3month treasury rate.csv',
+                colClasses = c("Date", "numeric"), 
+                na.strings=c("#N/A"), skip=10)
+
+```
+
+# Univariate Plots Section
+<br>
+The first dataset is Real Retail and Food Services Sales, (% change from year ago, monthly, seasonally adjusted). This gives an indication of economic health because retail sales changes are very sensitive to economic conditions. Therefore we can expect
+that retail sales will decline in poor times and pick up good times. The total volume is less important because it is affected by other trends like population and demographic changes. 
+
+<br>
+
+```{r echo=FALSE, Retail_Sales}
+### RETAIL SALES
+#rename the column title for convenience
+names(pf)[names(pf)=="observation_date"] <- "Date"
+# create new variable to combine the two different retail measures. The more modern RRSFS_PC1 is used wherever possible, otherwise RSALES_PC1.
+pf$retail_sales <- ifelse(is.na(pf$RRSFS_PC1), pf$RSALES_PC1, pf$RRSFS_PC1)  
+#summary(pf)
+#check that first 45 rows of data look correctly combined.
+#head(pf$retail_sales,45)
+#remove the data before our overall start_date
+pf <- subset(pf, pf$Date >= start_date)
+#calc quartiles
+rq25 = quantile(pf$retail_sales, probs=0.25)
+rq50 = quantile(pf$retail_sales, probs=0.5)
+rq75 = quantile(pf$retail_sales, probs=0.75)
+ggplot(aes(x = Date, y = retail_sales), 
+       data = subset(pf, pf$Date >=plot_start_date) ) +
+  geom_line( color = 'blue') +
+  geom_hline(yintercept=rq25, color='black',linetype='dotted') +
+  geom_hline(yintercept=rq50, color='red',linetype='solid') +
+  geom_hline(yintercept=rq75, color='black',linetype='dotted') +
+  ggtitle("Retail Sales")
+
+```
+<br>
+This demonstrates retail and food sales (% change, monthly). It is apparent that there are large swings in this indicator due to the cyclical nature of retail sales. It is also very noisy data, which will prove a challenge to extracting meaningful signal for predicting stock prices. The red line indicates the median, and the dashed lines are the quartiles.
+<br>
+
+```{r}
+#Summary and Histogram of retail sales
+
+ggplot(aes(x= retail_sales), data=pf ) +
+  geom_histogram(fill="lightblue", colour="black") + 
+  geom_vline(xintercept = rq50, linetype ="dashed") +
+  ggtitle("Retail Sales Histogram")
+
+summary(pf$retail_sales)
+
+```
+<br>
+The above summary statistics and histogram demonstrate that retail sales changes has a distribution that is somewhat narrower than Gaussian and with a longer negative tail, though the median (dashed line) is positive. This suggests that I should use percentiles for my choice of thresholds rather than standard deviations.
+
+<br>
+The next dataset is the Industrial Production Index, (% change from year ago, monthly, seasonally adjusted). This economic indicator is important as it indicates the growth or decline in heavy industry production (e.g. manufacturing). I would expect that it would decline prior to recessions and increase as the economy begins growing again.
+<br>
+```{r Industrial Production Growth, echo=FALSE}
+names(ip)[names(ip)=="observation_date"] <- "Date"
+names(ip)[names(ip)=="INDPRO_PC1"] <- "Industrial_Production"
+
+summary(ip)
+#remove the data before our overall start_date
+ip <- subset(ip, ip$Date >= start_date)
+summary(ip)
+
+#calc quartiles
+q25 = quantile(ip$Industrial_Production, probs=0.25)
+q50 = quantile(ip$Industrial_Production, probs=0.5)
+q75 = quantile(ip$Industrial_Production, probs=0.75)
+
+ggplot(aes(x = Date, y = Industrial_Production),
+       data = subset(ip, ip$Date >=plot_start_date) ) +
+  geom_line( color = 'black') +
+  geom_hline(yintercept=q25, color='black',linetype='dotted') +
+  geom_hline(yintercept=q50, color='red',linetype='solid') +
+  geom_hline(yintercept=q75, color='black',linetype='dotted') +
+  ggtitle("Industrial Production Growth")
+
+```
+<br>
+This demonstrates industrial production growth (% change, monthly). Like retail sales it is a indicator of the cyclical nature of the economy. It is apparent that there are large swings in this indicator and will also prove a challenge to extracting meaningful signal for predicting stock prices. The red line indicates the median, and the dashed lines are the quartiles.
+<br>
+
+```{r}
+#Summary and Histogram of retail sales
+
+ggplot(aes(x= Industrial_Production), data=ip ) +
+  geom_histogram(fill="lightgreen", colour="black") + 
+  geom_vline(xintercept = q50, linetype ="dashed") +
+  ggtitle("Industrial Production Histogram")
+
+summary(ip$Industrial_Production)
+
+```
+<br>
+The above summary statistics and histogram demonstrate that changes in Industrial Production has a distribution that has some similarities to retail sales, i.e. somewhat narrower than Gaussian (excess kurtosis) but this time with a long positive tail. Like retail sales, the median (dashed line) is positive. This suggests that I should use percentiles for my choice of thresholds rather than standard deviations.
+
+<br>
+<br>
+The next dataset is the Standard & Poor's 500 (S&P 500), an American stock market index based on the market capitalizations of 500 large companies having common stock listed on the NYSE or NASDAQ stock exchanges. 
+<br>
+
+```{r SP500, echo=FALSE}
+# S&P 500 stock index
+#Data from Yahoo are in Date descending order, need to sort dataframe by ascending order. 
+# Otherwise moving avg's etc use reverse time order (i.e. past dates are treated as future dates).
+# http://stackoverflow.com/questions/6246159/how-to-sort-a-data-frame-by-date-in-r
+sp <- sp0[order(as.Date(sp0$Date, format="%Y-%m-%d")),]
+#Will treat the monthly Closing price (adjusted for re-invested dividends) as the "price"
+names(sp)[names(sp)=="Adj.Close"] <- "Price"
+#This plot gives a long-term historical view of SP500 compared to its generally rising trend.
+#Using a log price scale b/c price generally increases exponentially.
+ggplot(aes(x = Date, y = Price), 
+       data = subset(sp, sp$Date >= start_date) ) +
+  geom_line( color = 'blue')  +
+  scale_y_log10() + 
+  ggtitle("S&P 500 Stock Index") +
+  geom_smooth(method='lm', formula='y ~ x', color='red')
+```
+<br>
+This demonstrates that the long-term trend of the major market index for the U.S. stocks (S & P 500) Price (log scale) appears to increase approximately linearly with Date. There are also very large deviations from this trend upward (e.g. late 1990's) and downward (2007-2008) which can be described as "bull" and "bear" market periods.
+<br>
+```{r}
+
+#Summary and Histogram of S&P500
+
+ggplot(aes(x= Price), data=sp ) +
+  geom_histogram(fill="red", colour="black") + 
+  geom_vline(xintercept = median(sp$Price), linetype ="dashed") +
+  ggtitle("S&P 500 Histogram")
+
+summary(sp$Price)
+
+```
+<br>
+The above summary statistics and histogram demonstrate that S&P500 has a Rayleigh-style distribution which is common to datasets where the variable (Price in this case) increases exponentially. The median (dashed line) is shown, however, without a transformation this and most statistics will not be useful.
+<br>
+
+```{r}
+#Histogram of S&P500 on log scale.
+ggplot(aes(x= Price), data=sp ) +
+  geom_histogram(fill="red", colour="black", binwidth=.05) + 
+  geom_vline(xintercept = median(sp$Price), linetype ="dashed") +
+  scale_x_log10() +
+  ggtitle("S&P 500 Histogram with Log scale")
+```
+<br>
+Changing the scale for S&P500 to a log scale produces this distribution. It is still not Gaussian, but perhaps shows a bi-modal distribution.
+
+<br>
+```{r}
+spsubset = subset(sp, sp$Date >= "2000-01-01")
+colDate = which( colnames(spsubset) == "Date")
+#Find the maximum Price at the height of the dot-com boom.
+Price2000 = max(subset(spsubset, spsubset$Date > "2000-01-01" &
+                         spsubset$Date < "2000-05-01")$Price)
+#Price2000
+PriceNow = subset(spsubset, spsubset$Date > "2015-12-01")$Price
+#PriceNow
+#Histogram of S&P500 on log scale.
+ggplot(aes(x= Price), data=spsubset ) +
+  geom_histogram(fill="red", colour="black", binwidth=.01) + 
+  geom_vline(xintercept = median(spsubset$Price), linetype ="dashed") +
+  geom_vline(xintercept = Price2000, linetype ="solid", col="blue") +
+  geom_vline(xintercept = PriceNow, linetype ="solid", col="red") +
+  scale_x_log10() +
+  ggtitle("S&P 500 Histogram since 2000 (Log scale)")
+
+```
+<br>
+This histogram of S&P500 since year 2000 illustrates that if we narrow the time interval considerably then we begin to see a distribution more similar to Gaussian, however, even in this time period there appears to be a 2nd peak (mode) at the high Price end.
+For interest I've plotted the median (dashed black line), the peak from the dot-com technology boom ($1498, blue line, year 2000) and the current Price ($1881, red line). It may at first appear concerning that we are at the upper end of the distribution, except that we do expect the historical trend of exponentially increasing prices to continue and not revert back to the median for this 15 year interval.
+<br>
+
+The next dataset shows the 10-Year Treasury Rate (percent, monthly). The Treasury yield is the interest rate the U.S. government pays to borrow money for the given term. The 10 Year Treasury is considered "medium" term meaning that the lending period is intermediate and therefore the rate is higher than shorter term Treasuries.
+<br>
+```{r 10YR Treasury, echo=FALSE}
+#10 Year Treasury Rate
+names(dft10)[names(dft10)=="observation_date"] <- "Date"
+names(dft10)[names(dft10)=="WGS10YR"] <- "Treasury_10YR_Rate"
+#summary(dft10)
+#remove the data before our overall start_date
+dft10 <- subset(dft10, dft10$Date >= start_date)
+#summary(dft10)
+#calc quartiles
+t10q25 = quantile(dft10$Treasury_10YR_Rate, probs=0.25)
+t10q50 = quantile(dft10$Treasury_10YR_Rate, probs=0.5)
+t10q75 = quantile(dft10$Treasury_10YR_Rate, probs=0.75)
+#10month simple moving average
+#SMA is the simple moving average over n periods (months).
+dft10$sma <- SMA( dft10$Treasury_10YR_Rate, n=10 )
+ggplot(aes(x = Date, y = Treasury_10YR_Rate),
+       data = subset(dft10, dft10$Date >=plot_start_date) ) +
+  geom_line( color = 'blue') +
+  geom_line( aes(y=sma), color='black') +
+  geom_hline(yintercept=t10q25, color='black',linetype='dotted') +
+  geom_hline(yintercept=t10q50, color='red',linetype='solid') +
+  geom_hline(yintercept=t10q75, color='black',linetype='dotted') +
+  ggtitle("10 Year Treasury Rate")
+```
+<br>An interesting point is that the rates on these government bonds are in the bottom quartile since the mid-2000's. Some believe the trend has reversed some time in 2015. The black curve is the 10 month simple moving average (SMA), which is a rolling 10 month window for calculating the average which is useful to see the smooth, long-term trend.
+<br>
+
+
+```{r}
+dateNow = max(dft10$Date)
+RateNow = subset(dft10, dft10$Date == dateNow )$Treasury_10YR_Rate
+#RateNow
+#Histogram of S&P500 on log scale.
+ggplot(aes(x= Treasury_10YR_Rate), data=dft10 ) +
+  geom_histogram(fill="darkblue", colour="black",binwidth=.25) + 
+  geom_vline(xintercept = median(dft10$Treasury_10YR_Rate), 
+             linetype ="dashed") +
+  geom_vline(xintercept = RateNow, linetype ="solid", col="red") +
+  ggtitle("10 Year Treasury Rate Histogram")
+
+summary(dft10$Treasury_10YR_Rate)
+```
+<br>
+The histogram for the 10 Year Treasury Rate shows that it is skewed to lower rates with a tail of high rates.
+The most interesting point is how low the current rate (2.1%, red line) is compared to the median (dashed line) and the rest of the distribution.
+
+<br>
+<br>
+The next dataset shows the 3-Month Treasury Rate (percent, monthly). Like the 10-Year Treasury this is a government backed credit instrument, except in this case the term is very short and consequently the risk and rate are relatively low. The 3-Month Treasury Rate is often called the "risk-free" rate because these credit instruments have extremely low risk of default. 
+<br>
+```{r 3 month treasury, echo=FALSE}
+#3 Month Treasury
+names(dft3)[names(dft3)=="observation_date"] <- "Date"
+names(dft3)[names(dft3)=="TB3MS"] <- "Treasury_3Month_Rate"
+
+#remove the data before our overall start_date
+dft3 <- subset(dft3, dft3$Date >= start_date)
+#summary(dft3)
+
+#calc quartiles
+t3q25 = quantile(dft3$Treasury_3Month_Rate, probs=0.25)
+t3q50 = quantile(dft3$Treasury_3Month_Rate, probs=0.5)
+t3q75 = quantile(dft3$Treasury_3Month_Rate, probs=0.75)
+#10month simple moving average
+#SMA is the simple moving average over n periods (months).
+dft3$sma <- SMA( dft3$Treasury_3Month_Rate, n=10 )
+
+ggplot(aes(x = Date, y = Treasury_3Month_Rate),
+       data = subset(dft3, dft3$Date >=plot_start_date) ) +
+  geom_line( color = 'blue') +
+  geom_line( aes(y=sma), color='black') +
+  geom_hline(yintercept=t3q25, color='black',linetype='dotted') +
+  geom_hline(yintercept=t3q50, color='red',linetype='solid') +
+  geom_hline(yintercept=t3q75, color='black',linetype='dotted') +
+  ggtitle("3 Month Treasury Rate")
+```
+<br>
+The black curve is the 10 month simple moving average (SMA).
+In this case the rates have hit the floor (almost 0%) since the crisis of 2008-9.
+Contrast this with the >10% rates in the '80s.
+Overall it is apparent that this shorter term (3 month) has a lower rate than the longer term (10 year) but the difference between the two (the "spread") varies with time. I'll investigate this further in Bivariate Plots.
+<br>
+
+```{r}
+dateNow = max(dft3$Date)
+RateNow = subset(dft3, dft3$Date == dateNow )$Treasury_3Month_Rate
+#RateNow
+#Histogram of S&P500 on log scale.
+ggplot(aes(x= Treasury_3Month_Rate), data=dft3 ) +
+  geom_histogram(fill="darkblue", colour="black",binwidth=.25) + 
+  geom_vline(xintercept = median(dft3$Treasury_3Month_Rate), 
+             linetype ="dashed") +
+  geom_vline(xintercept = RateNow, linetype ="solid", col="red") +
+  ggtitle("3 Month Treasury Rate Histogram")
+
+summary(dft3$Treasury_3Month_Rate)
+```
+<br>
+The histogram for the 3 Month Treasury Rate shows that it is skewed to lower rates with a long tail of high rates, with a very high peak for the lowest end (<0.25%).
+The most interesting point is how low the current rate (0.23%, red line) is compared to the median (dashed line) and the rest of the distribution.
+
+<br>
+
+# Bivariate Plots Section
+```{r SMA, echo=FALSE}
+#Simple Moving Average
+
+#SMA is the simple moving average over n periods (months).
+sp$sma <- SMA( sp$Price, n=10 )
+
+#Create subset of the recession table that is in the range of dates to be plotted.
+rdfSubset = subset(rdf, rdf$Start >= plot_start_date)
+
+#set the lower and upper bounds of the rectangles representing recessions.
+price_for_interval = subset(sp$Price, sp$Date >= plot_start_date)
+#initialize the vector shape and type for height of the recession rectangles.
+spmin = vector(mode='numeric', length=length(rdfSubset$Start))
+spmax = vector(mode='numeric', length=length(rdfSubset$Start))
+#store the lower and upper ends of the rectangles. Use rep to duplicate across all elements (rectangles) of vector.
+spmin <- rep(min(price_for_interval), times=length(rdfSubset$Start))
+spmax <- rep(max(price_for_interval), times=length(rdfSubset$Start))
+
+#Since 2000 was a top, it probably biases our result. Below uses a 20 yr period which includes 2 cycles.
+#Based on this I would again conclude SP500 is undervalued, by a large margin.
+#using a log price scale b/c price generally increases exponentially.
+# scale_x_date gives date labels in "MON YY" format.
+ggplot(aes(x = Date, y = Price), 
+       data = subset(sp, sp$Date >= plot_start_date) ) +
+  geom_line( color = 'blue') +
+  geom_line( aes(y=sma), color='black') +
+  scale_y_log10() +
+  scale_x_date(date_labels = "%b %y") +
+  annotate("rect", xmin= rdfSubset$Start, xmax= rdfSubset$End, ymin= spmin, 
+           ymax = spmax, fill="red", alpha = .25) +
+  ggtitle("S&P500 and Recessions")
+
+```
+<br>
+This demonstrates that the beginning of official recessions (intervals indicated in red) tend to coincide closely with the beginning of a bear market (where a >20% downturn occurs). The black curve shows the 10 month simple moving average.
+<br>
+
+```{r Dot-Com Recession, echo=FALSE}
+#SMA is the simple moving average over n periods (months).
+sp$sma3 <- SMA( sp$Price, n=3 )
+sp$sma6 <- SMA( sp$Price, n=6 )
+startdate = "1999-01-01"
+enddate = "2002-01-01"
+#Create subset of the recession table that is in the range of dates to be plotted.
+rdfSubset2 = subset(rdf, rdf$Start >= startdate & rdf$End <= enddate)
+
+#set the lower and upper bounds of the rectangles representing recessions.
+price_for_interval = subset(sp$Price, 
+                            sp$Date >= startdate & sp$Date <= enddate)
+#initialize the vector shape and type for height of the recession rectangles.
+spmin = vector(mode='numeric', length=length(rdfSubset2$Start))
+spmax = vector(mode='numeric', length=length(rdfSubset2$Start))
+#store the lower and upper ends of the rectangles. Use rep to duplicate across all elements (rectangles) of vector.
+spmin <- rep(min(price_for_interval), times=length(rdfSubset2$Start))
+spmax <- rep(max(price_for_interval), times=length(rdfSubset2$Start))
+
+cols <- c("3 month"="green", "6 month"="red", "10 month"= "blue")
+ggplot(aes(x = Date, y = Price), 
+       data = subset(sp, Date >= startdate & Date <= enddate) ) +
+  geom_line( color = 'black') +
+  geom_line( aes(y=sma3, group=1, color='3 month')) +
+  geom_line( aes(y=sma6, group=1, color='6 month')) +
+  geom_line( aes(y=sma, group=1, color='10 month')) +
+  scale_y_log10() +
+  scale_x_date(date_labels = "%b %y") +
+  ggtitle("S&P500 and the 2001 Recession") +
+  annotate("rect", xmin= rdfSubset2$Start, xmax= rdfSubset2$End, ymin= spmin, 
+           ymax = spmax, fill="red", alpha = .25) +
+  scale_color_manual(name="Simple Moving Avg", values = cols)
+```
+<br> This graph illustrates how the 2001 recession (red interval) was preceded by the S&P500 stock index (black) falling below 3 month Simple Moving Average (SMA) shown in green, the 6 month SMA (red) and the 10 month SMA. One point of interest is that the stock index declined prior to the recession and therefore just predicting the start of a recession will not necessarily protect from large declines in stock price. 
+
+It's also interesting to note that although the Price falling below the 3 month SMA (crossover) is an earlier predictor of the later decline than the 6month SMA or 10month SMA crossovers, the 3 month SMA crossover when used as a predictor would produce many false positives e.g. the July 1999 crossover.  The reason I choose to use the 10 month SMA in later work is that the crossover of Price below the 10month SMA rarely occurs and is more indicative of a large decline.
+<br>
+
+```{r GFC Recession, echo=FALSE}
+startdate = "2006-01-01"
+enddate = "2010-01-01"
+#Create subset of the recession table that is in the range of dates to be plotted.
+rdfSubset3 = subset(rdf, rdf$Start >= startdate & rdf$End <= enddate)
+
+#set the lower and upper bounds of the rectangles representing recessions.
+price_for_interval = subset(sp$Price, sp$Date >= startdate & sp$Date <= enddate)
+#initialize the vector shape and type for height of the recession rectangles.
+spmin = vector(mode='numeric', length=length(rdfSubset3$Start))
+spmax = vector(mode='numeric', length=length(rdfSubset3$Start))
+#store the lower and upper ends of the rectangles. Use rep to duplicate across all elements (rectangles) of vector.
+spmin <- rep(min(price_for_interval), times=length(rdfSubset3$Start))
+spmax <- rep(max(price_for_interval), times=length(rdfSubset3$Start))
+
+cols <- c("3 month"="green", "6 month"="red", "10 month"= "blue")
+ggplot(aes(x = Date, y = Price), 
+       data = subset(sp, Date >= startdate & Date <= enddate) ) +
+  geom_line( color = 'black') +
+  geom_line( aes(y=sma3, group=1, color='3 month')) +
+  geom_line( aes(y=sma6, group=1, color='6 month')) +
+  geom_line( aes(y=sma, group=1, color='10 month')) +
+  scale_y_log10() +
+  scale_x_date(date_labels = "%b %y") +
+  ggtitle("S&P500 and the 2007-8 Recession") +
+  annotate("rect", xmin= rdfSubset3$Start, xmax= rdfSubset3$End, ymin= spmin, 
+           ymax = spmax, fill="red", alpha = .25) +
+  scale_color_manual(name="Simple Moving Avg", values = cols)
+```
+<br>
+This graph shows a similar pattern of SMA crossover preceding the 2007-2008 recession. The recession (red interval) was preceded by the S&P500 stock index (black) falling below 3 month Simple Moving Average (SMA) shown in green, the 6 month SMA (red) and the 10 month SMA (blue). In this graph it can also be seen that endpoint of the recession nearly coincides with the crossover of S&P500 moving <b>above</b> the 10 month SMA, around March 2009.
+<br>
+
+
+```{r sp500 Now, echo=FALSE}
+startdate = "2014-01-01"
+cols <- c("3 month"="green", 
+          "6 month"="red", "10 month"= "blue", "Price"="black")
+ggplot(aes(x = Date, y = Price), 
+       data = subset(sp, Date >= startdate) ) +
+  geom_line( aes(y=Price, group=1, color='Price')) +
+  geom_line( aes(y=sma3, group=1, color='3 month')) +
+  geom_line( aes(y=sma6, group=1, color='6 month')) +
+  geom_line( aes(y=sma, group=1, color='10 month')) +
+  scale_x_date(date_labels = "%b %y") +
+  ggtitle("S&P500 for 2014-Present") +
+  scale_color_manual(name="Legend", values = cols)
+```
+<br>
+Recently the S&P500 has also dipped below the 10month SMA, both in August 2015 and January 2016. This raises the important question as to whether the U.S. is now on the verge of a recession.
+<br>
+
+```{r sp500 Relative to 10Mo SMA, echo=FALSE}
+startdate = "1999-01-01"
+enddate = "2010-01-01"
+
+sp$change <- sp$Price - sp$sma
+
+#Create subset of the recession table that is in the range of dates to be plotted.
+rdfSubset4 = subset(rdf, rdf$Start >= startdate & rdf$End <= enddate)
+
+#set the lower and upper bounds of the rectangles representing recessions.
+price_for_interval = subset(sp$Price, sp$Date >= startdate & sp$Date <= enddate)
+#initialize the vector shape and type for height of the recession rectangles.
+spmin = vector(mode='numeric', length=length(rdfSubset4$Start))
+spmax = vector(mode='numeric', length=length(rdfSubset4$Start))
+#store the lower and upper ends of the rectangles. Use rep to duplicate across all elements (rectangles) of vector.
+spmin <- rep(min(price_for_interval), times=length(rdfSubset4$Start))
+spmax <- rep(max(price_for_interval), times=length(rdfSubset4$Start))
+
+cols <- c("Difference"= "blue", "Price"="black")
+ggplot(aes(x = Date, y = Price), 
+       data = subset(sp, Date >= startdate & Date <= enddate) ) +
+  geom_line( aes(y=Price, group=1, color='Price')) +
+  geom_line( aes(y=change, group=1, color='Difference')) +
+  scale_x_date(date_labels = "%b %y") +
+  ggtitle("S&P500 and Difference \nrelative to 10 month SMA") +
+  scale_color_manual(name="Legend", values = cols) + 
+  annotate("rect", xmin= rdfSubset4$Start, xmax= rdfSubset4$End, ymin= spmin, 
+           ymax = spmax, fill="red", alpha = .25)
+```
+<br>Since we've seen that Price falling below the 10 month SMA usually coincides with a major decline in S&P500 index, and sometimes precedes a recession (red interval), I decided to plot this Difference (blue).
+<br>
+
+```{r sp500 with Trend, echo=FALSE}
+startdate = "1999-01-01"
+enddate = "2010-01-01"
+
+sp$change <- sp$Price - sp$sma
+#sp$changesign <- ifelse(sp$change >0, 1, 0)
+sp$changesign <- 100*(sp$Price - sp$sma)/sp$sma
+
+#Create subset of the recession table that is in the range of dates to be plotted.
+rdfSubset4 = subset(rdf, rdf$Start >= startdate & rdf$End <= enddate)
+
+#set the lower and upper bounds of the rectangles representing recessions.
+price_for_interval = subset(sp$Price, 
+                            sp$Date >= startdate & sp$Date <= enddate)
+#initialize the vector shape and type for height of the recession rectangles.
+spmin = vector(mode='numeric', length=length(rdfSubset4$Start))
+spmax = vector(mode='numeric', length=length(rdfSubset4$Start))
+#store the lower and upper ends of the rectangles. Use rep to duplicate across all elements (rectangles) of vector.
+spmin <- rep(min(price_for_interval), times=length(rdfSubset4$Start))
+spmax <- rep(max(price_for_interval), times=length(rdfSubset4$Start))
+
+#cols <- c("Difference"= "red", "Price"="black")
+ggplot(aes(x = Date, y = Price), 
+       data = subset(sp, Date >= startdate & Date <= enddate) ) +
+  geom_line( aes(y=Price, color=changesign)) +
+  scale_x_date(date_labels = "%b %y") +
+  ggtitle("S&P500 and Critical Periods \nPrice relative to 10 mo SMA") +
+  annotate("rect", xmin= rdfSubset4$Start, 
+           xmax= rdfSubset4$End, ymin= spmin, 
+           ymax = spmax, fill="red", alpha = .1) +
+  scale_color_continuous(name="% Difference", 
+                        low="red", 
+                        high="green",
+                        limits = c(-2.5,2.5)) 
+  #theme(plot.background = element_rect(fill = 'gray90', colour = 'black'))
+```
+<br>
+This graph illustrates the time periods when the S&P500 stock index changes from positive conditions to negative conditions. The Price curve is colored according to the % Difference relative to the 10 month SMA (green positive, red negative), excluding large values (> abs(2.5%)) in order to highlight the critical periods. 
+
+```{r Term spread, echo=FALSE}
+#Term Spread (Treasury 10yr rate minus 3 month rate)
+
+#Calculate the difference between the 10yr and 3month treasury, often called the "term spread" since the risk (and premium) is
+# understood to come from the term only since both are backed by US government.
+
+#merge the data into the same dataframe, starting from the dataset (10yr rate) with the later start date.
+dfspread <- subset(dft3, dft3$Date >= min(dft10$Date))
+dfspread <- merge(dft10, dfspread, by="Date")
+dfspread$Treasury_Spread <- dfspread$Treasury_10YR_Rate - 
+  dfspread$Treasury_3Month_Rate
+#dfspread$smaDiff <- dfspread$sma.x - dfspread$sma.y
+
+#3month simple moving average
+#SMA is the simple moving average over n periods (months).
+dfspread$smaSpread <- SMA( dfspread$Treasury_Spread, n=3 )
+
+
+#set the lower and upper bounds of the rectangles representing recessions.
+spread_for_interval = subset(dfspread$Treasury_Spread, 
+                             dfspread$Date >= plot_start_date)
+#initialize the vector shape and type for height of the recession rectangles.
+tsmin = vector(mode='numeric', length=length(rdfSubset$Start))
+tsmax = vector(mode='numeric', length=length(rdfSubset$Start))
+#store in the y1 and y2 the lower and upper ends of the rectangles. Use rep to duplicate across all elements (rectangles) of vector.
+tsmin <- rep(min(spread_for_interval), times=length(rdfSubset$Start))
+tsmax <- rep(max(spread_for_interval), times=length(rdfSubset$Start))
+
+#calc quartiles
+spreadq25 = quantile(dfspread$Treasury_Spread, probs=0.25)
+spreadq50 = quantile(dfspread$Treasury_Spread, probs=0.5)
+spreadq75 = quantile(dfspread$Treasury_Spread, probs=0.75)
+
+
+ggplot(aes(x = Date, y = Treasury_Spread),
+       data = subset(dfspread, dfspread$Date >=plot_start_date) ) +
+  scale_x_date(date_labels = "%b %y") +
+  annotate("rect", xmin= rdfSubset$Start, xmax= rdfSubset$End, ymin= tsmin, 
+           ymax = tsmax, fill="red", alpha = .25) +
+  geom_hline(yintercept=spreadq25, color='black',linetype='dotted') +
+  geom_hline(yintercept=spreadq50, color='red',linetype='solid') +
+  geom_hline(yintercept=spreadq75, color='black',linetype='dotted') +
+  geom_line( aes(y=smaSpread) ) +
+  ggtitle("Treasury Spread")
+
+```
+```{r}
+dateNow = max(dfspread$Date)
+Rate2008 = subset(dfspread, dfspread$Date == "2007-01-01" )$Treasury_Spread
+
+RateNow = subset(dfspread, dfspread$Date == dateNow )$Treasury_Spread
+# Rate2008
+# RateNow
+#Histogram of S&P500 on log scale.
+ggplot(aes(x= Treasury_Spread), data=dfspread ) +
+  geom_histogram(fill="lightblue", colour="black",binwidth=.2) + 
+  geom_vline(xintercept = median(dfspread$Treasury_Spread), 
+             linetype ="dashed") +
+  geom_vline(xintercept = RateNow, linetype ="solid", col="red") +
+  geom_vline(xintercept = Rate2008, linetype ="solid", col="blue") +
+  ggtitle("Treasury Spread Histogram")
+
+summary(dfspread$Treasury_Spread)
+```
+<br>
+The histogram for the Treasury Spread illustrates that the spread between rates is nearly typical for this time period with the current spread (2%, red line) just a little above the median (1.6%, dashed line). This contrasts sharply with the very low spread (-0.24%, blue line) at the start of 2007 and the beginning of the financial crash.
+
+<br>
+
+<br>
+
+The treasury spread (difference between 10 year Treasury rate and 3 month treasury rate) is thought to be a good predictor of recessions.
+Notice that when the treasury spread has recently had a low (especially <0) and then turns up this often precedes a recession (red intervals).
+<br>
+
+# Multivariate Plots Section
+
+```{r Treasury Spread Predicting Recessions, echo=FALSE}
+#Treasury Spread with a Probability for Recession
+#Use the rate of change (ROC) to determine the slope on graph.
+#The ROC calculator uses the log(x) of the input so I use exp(x) to avoid NaNs.
+dfspread$roc <- ROC(ifelse(!is.na(dfspread$smaSpread), 
+                           exp(dfspread$smaSpread), 1))
+
+#This variable is a crude measure of recession risk (0=high risk, 1= low risk) based on the SMA of the Treasury Spread 
+# being below 25th percentile (1st quartile) indicating a recession likely.
+dfspread$Recession_Probable <- ifelse( 
+  (dfspread$smaSpread < spreadq25 & dfspread$roc >= 0) | 
+  (dfspread$smaSpread < 0),
+  0, 1)
+
+ggplot(aes(x = Date, y = Treasury_Spread),
+       data = subset(dfspread, dfspread$Date >=plot_start_date) ) +
+  scale_x_date(date_labels = "%b %y") +
+  annotate("rect", xmin= rdfSubset$Start, xmax= rdfSubset$End, 
+           ymin= tsmin, ymax = tsmax, fill="red", alpha = .25) +
+  geom_hline(yintercept=spreadq25, color='black',linetype='dotted') +
+  geom_hline(yintercept=spreadq50, color='red',linetype='solid') +
+  geom_hline(yintercept=spreadq75, color='black',linetype='dotted') +
+  geom_line( aes(y=smaSpread) ) +
+  geom_point( aes(y=smaSpread, color=factor(Recession_Probable) ) ) +
+  scale_color_discrete(name ="Probability of\n Recession", 
+                       labels = c("High","Low")) +
+  ggtitle("Probability of Recession from Treasury Spread")
+
+```
+<br>
+This plot demonstrates that the treasury spread shows predictive value for recessions. For the purpose of smoothing out noise, I'm plotting the 3month simple moving average curve and using it for the predictive calculations. I've created a Probability of Recession factor which indicates high risk if the spread is in the bottom quartile and its rate of change (slope) is rising; or the spread is negative (called "inverted yield curve" by economists). These points are plotted as red on the graph and tend to precede a recession. Based on this predictor it would appear that we are in no danger of a recession due to the current (Jan 2016) spread exceeding the median (red line).
+<br>
+
+```{r Retail Sales Predicting Recessions,echo=FALSE}
+#3month simple moving average
+#SMA is the simple moving average over n periods (months).
+pf$sma <- SMA( pf$retail_sales, n=3 )
+
+#Use the rate of change (ROC) to determine the slope on graph.
+#The ROC calculator uses the log(x) of the input so I use exp(x) to avoid NaNs.
+pf$roc <- ROC(ifelse(!is.na(pf$sma), exp(pf$sma), 1))
+
+#apparently 35% cutoof is better than the 25% quartile cutoff as a predictor of recessions.
+rq35 = quantile(pf$retail_sales, probs=0.35)
+
+#This variable is a crude measure of recession risk (1=high risk, 0= low risk) based on the SMA of the Retail sales 
+# being below 25th percentile (1st quartile) indicating a recession likely.
+pf$Recession_Probable <- ifelse( pf$sma < rq35 & pf$roc < 0, 0, 1)
+
+#set the lower and upper bounds of the rectangles representing recessions.
+sales_for_interval = subset(pf$retail_sales, pf$Date >= plot_start_date)
+#initialize the vector shape and type for height of the recession rectangles.
+ymin = vector(mode='numeric', length=length(rdfSubset$Start))
+ymax = vector(mode='numeric', length=length(rdfSubset$Start))
+#store the lower and upper ends of the rectangles. Use rep to duplicate across all elements (rectangles) of vector.
+ymin <- rep(min(sales_for_interval), times=length(rdfSubset$Start))
+ymax <- rep(max(sales_for_interval), times=length(rdfSubset$Start))
+
+ggplot(aes(x = Date, y = retail_sales),
+       data = subset(pf, pf$Date >=plot_start_date) ) +
+  annotate("rect", xmin= rdfSubset$Start, xmax= rdfSubset$End, ymin= ymin, 
+           ymax = ymax, fill="red", alpha = .25) +
+  geom_line( aes(y=retail_sales) ) +
+  geom_point( aes(y=retail_sales, color=factor(Recession_Probable) ) ) +
+  scale_color_discrete()
+
+#  scale_x_date(date_labels = "%b %y") +
+
+```
+<br>
+This plot illustrates a method of using Retail Sales (% change from year ago) as a predictor of recessions in a manner similar to the previous Treasury spread graph. I've created a Probability of Recession factor which indicates high probability if Retail Sales is below the 35th percentile (blue line) and its rate of change (slope) is decreasing. (This criterion is based on a simple observation of the historical data, i.e. "back-testing".) These "high probability of recession" points are plotted as red on the graph and tend to precede a recession, though there are more false warnings than with the treasury spread predictor. As of today (Jan 2016) the retail sales predictor is not yet warning of recession. 
+<br>
+
+```{r Industrial Production Predicting Recessions,echo=FALSE}
+#3month simple moving average
+#SMA is the simple moving average over n periods (months).
+ip$sma <- SMA( ip$Industrial_Production, n=6)
+
+#Use the rate of change (ROC) to determine the slope on graph.
+#The ROC calculator uses the log(x) of the input so I use exp(x) to avoid NaNs.
+ip$roc <- ROC(ifelse(!is.na(ip$sma), exp(ip$sma), 4))
+
+#This variable is a crude measure of recession risk (0=high risk, 1= low risk) based on the SMA of the Retail sales 
+# being below 25th percentile (1st quartile) indicating a recession likely.
+ip$Recession_Probable <- ifelse( (ip$sma < q50 & ip$roc < 0), 0, 1)
+
+#set the lower and upper bounds of the rectangles representing recessions.
+ip_for_interval = subset(ip$Industrial_Production, 
+                         pf$Date >= plot_start_date)
+#initialize the vector shape and type for height of the recession rectangles.
+ipmin = vector(mode='numeric', length=length(rdfSubset$Start))
+ipmax = vector(mode='numeric', length=length(rdfSubset$Start))
+#store the lower and upper ends of the rectangles. Use rep to duplicate across all elements (rectangles) of vector.
+ipmin <- rep(min(ip_for_interval), times=length(rdfSubset$Start))
+ipmax <- rep(max(ip_for_interval), times=length(rdfSubset$Start))
+
+ggplot(aes(x = Date, y = Industrial_Production),
+       data = subset(ip, ip$Date >=plot_start_date) ) +
+  scale_x_date(date_labels = "%b %y") +
+  annotate("rect", xmin= rdfSubset$Start, xmax= rdfSubset$End, ymin= ipmin, 
+           ymax = ipmax, fill="red", alpha = .25) +
+  geom_hline(yintercept=q25, color='black',linetype='dotted') +
+  geom_hline(yintercept=q50, color='red',linetype='solid') +
+  geom_hline(yintercept=q75, color='black',linetype='dotted') +
+  geom_line( aes(y=sma) ) +
+  geom_point( aes(y=sma, color=factor(Recession_Probable) ) ) +
+  scale_color_discrete(name ="Probability of\n Recession", 
+                       labels = c("High","Low")) +
+  ggtitle("Probability of Recession from Industrial Production")
+
+```
+<br>
+This plot illustrates a method of using Industrial Production as a predictor of recessions in a manner similar to the previous graphs. I'm plotting the 6 month simple moving average of Industrial Production (% change from year ago) and using it for the predictive calculations. I've created a Probability of Recession factor which indicates high probability if Industrial Production is below the median (red line) and its rate of change (slope) is decreasing. (This criterion is based on a simple observation of the historical data, i.e. "back-testing".) These "high probability of recession" points are plotted as red on the graph and tend to precede a recession. Unfortunately this predictor which was very useful historically has many false warnings in this modern era, especially compared with either the treasury spread or retail sales predictors. As of today (Jan 2016) the industrial production predictor is warning of recession due to the downward trend below the bottom quartile contrary to the other predictors. However, there have been many false positive warnings in the past (e.g. 70's and 80's) and it provided almost no prior warning for the 2008 recession.
+<br>
+
+------
+
+# Final Plots and Summary
+<br>
+
+### Plot One
+```{r echo=FALSE, Plot_One}
+#3month simple moving average
+#SMA is the simple moving average over n periods (months).
+pf$sma <- SMA( pf$retail_sales, n=3 )
+
+#Use the rate of change (ROC) to determine the slope on graph.
+#The ROC calculator uses the log(x) of the input so I use exp(x) to avoid NaNs.
+pf$roc <- ROC(ifelse(!is.na(pf$sma), exp(pf$sma), 1))
+
+#apparently 35% cutoof is better than the 25% quartile cutoff as a predictor of recessions.
+rq35 = quantile(pf$retail_sales, probs=0.35)
+
+#This variable is a crude measure of recession risk (1=high risk, 0= low risk) based on the SMA of the Retail sales 
+# being below 25th percentile (1st quartile) indicating a recession likely.
+pf$Recession_Probable <- ifelse( pf$sma < rq35 & pf$roc < 0, 0, 1)
+
+#set the lower and upper bounds of the rectangles representing recessions.
+sales_for_interval = subset(pf$retail_sales, pf$Date >= plot_start_date)
+#initialize the vector shape and type for height of the recession rectangles.
+ymin = vector(mode='numeric', length=length(rdfSubset$Start))
+ymax = vector(mode='numeric', length=length(rdfSubset$Start))
+#store the lower and upper ends of the rectangles. Use rep to duplicate across all elements (rectangles) of vector.
+ymin <- rep(min(sales_for_interval), times=length(rdfSubset$Start))
+ymax <- rep(max(sales_for_interval), times=length(rdfSubset$Start))
+
+ggplot(aes(x = Date, y = retail_sales),
+       data = subset(pf, pf$Date >=plot_start_date) ) +
+  scale_x_date(date_labels = "%b %y") +
+  annotate("rect", xmin= rdfSubset$Start, xmax= rdfSubset$End, ymin= ymin, 
+           ymax = ymax, fill="black", alpha = .1) +
+  geom_hline(yintercept=rq25, color='black',linetype='dotted') +
+  geom_hline(yintercept=rq35, color='red',linetype='solid') +
+  geom_hline(yintercept=rq50, color='black',linetype='solid') +
+  geom_hline(yintercept=rq75, color='black',linetype='dotted') +
+  geom_line( aes(y=sma) ) +
+  geom_point( aes(y=sma, color=factor(Recession_Probable) ) ) +
+  ggtitle("Predicting Recessions\n from Retail Sales") +
+  labs(x="Date (Month-Year)", y="Retail Sales\n(% change from year ago)") +
+  scale_color_manual(name ="Recession\nLikelihood", labels = c("High", "Low"), 
+                     values = c("red","darkgreen")) +
+  theme(legend.position = c(.9,.9))
+
+
+```
+<br>
+
+### Description One
+
+This plot illustrates a method of using Retail Sales as a predictor of recessions. The data is smoothed by a 3 month simple moving average of Retail Sales and this is also used for the predictive calculations. The Retail Sales median (black horizontal line) and  quartiles (dashed lines) are shown. A Recession Likelihood factor was calculated which indicates high probability if Retail Sales is below the 35th percentile (blue line) and its rate of change (slope) is decreasing. (This criterion is based on a simple observation of the historical data, i.e. "back-testing".) These "high probability of recession" months (red) tend to precede a recession, though there are some false warnings e.g. early 70's. As of today (Jan 2016) the retail sales predictor is not yet warning of recession. The recent downward trend toward the threshold (red line) that would trigger a warning is concerning but this happened many times in the '90s without a recession.
+<br>
+
+### Plot Two
+<br>
+```{r echo=FALSE, Plot_Two}
+startdate = plot_start_date
+enddate = "2017-01-01"
+#Create subset of the recession table that is in the range of dates to be plotted.
+rdfSubset4 = subset(rdf, rdf$Start >= startdate & rdf$End <= enddate)
+
+#set the lower and upper bounds of the rectangles representing recessions.
+price_for_interval = subset(sp$Price, 
+                            sp$Date >= startdate & sp$Date <= enddate)
+#initialize the vector shape and type for height of the recession rectangles.
+spmin = vector(mode='numeric', length=length(rdfSubset4$Start))
+spmax = vector(mode='numeric', length=length(rdfSubset4$Start))
+#store the lower and upper ends of the rectangles. Use rep to duplicate across all elements (rectangles) of vector.
+spmin <- rep(min(price_for_interval), times=length(rdfSubset4$Start))
+spmax <- rep(max(price_for_interval), times=length(rdfSubset4$Start))
+
+
+ggplot(aes(x = Date, y = Treasury_Spread),
+       data = subset(dfspread, dfspread$Date >=plot_start_date) ) +
+  scale_x_date(date_labels = "%b %y") +
+  annotate("rect", xmin= rdfSubset$Start, xmax= rdfSubset$End, ymin= tsmin, 
+           ymax = tsmax, fill="black", alpha = .1) +
+  geom_hline(yintercept=spreadq25, color='red',linetype='solid') +
+  geom_line( aes(y=smaSpread) ) +
+  geom_point( aes(y=smaSpread, color=factor(Recession_Probable) ) ) +
+  scale_color_manual(name ="Recession\nLikelihood", labels = c("High", "Low"), 
+                     values = c("red","darkgreen")) +
+  ggtitle("Probability of Recession from Treasury Spread") +
+  labs(x="Date (Month-Year)", y="Treasury Spread\n(Difference in the Interest Rate\non 10 year and 3 month Treasury bills)")+
+  theme(legend.position = c(.9,.2))
+
+```
+<br>
+
+### Description Two
+<br>
+This plot demonstrates that the Treasury Spread shows predictive value for recessions. The Treasury Spread is defined by the difference in the 10 year Treasury Rate and the 3 month Treasury Rate. The data has been smoothed using the 3 month simple moving average and this was also used for the calculation of a Probability of Recession factor. The time periods indicated by the gray bars are U.S. recessions as defined by the National Bureau of Economic Research. The Recession Probability indicates high risk if the spread is in the bottom quartile (below red line) and its rate of change (slope) is rising; or the spread is below zero, which economists call a "inverted yield curve". These high risk months (red points) tend to precede or coincide with a recession. Based on this predictor it would appear that we are in no danger of a recession due to the current (Jan 2016) spread far exceeding the bottom quartile.
+<br>
+
+### Plot Three
+<br>
+```{r echo=FALSE, Plot_Three}
+#This is a plot of the probability of recessions on the S&P500 stock index.
+
+#Calc Recession_Probable as a combined measure of recession risk (3=high risk, 0= low risk) based on the three predictors:
+# industrial production, retail sales and treasury spread.
+
+#This end date is used because we don't have data for this month from retail sales, but want to combine it with the other data.
+plot_end_date = "2015-12-01"
+spsub <- subset(sp, sp$Date >= plot_start_date & sp$Date < plot_end_date)
+
+# Not using industrial production because it has poor predictive value.
+#p1 <- subset(ip$Recession_Probable, 
+# ip$Date >= plot_start_date & ip$Date < plot_end_date)
+
+p2 <- subset(pf$Recession_Probable, 
+             pf$Date >= plot_start_date & pf$Date < plot_end_date)
+
+p3 <- subset(dfspread$Recession_Probable, 
+             dfspread$Date >= plot_start_date & dfspread$Date < plot_end_date)
+
+#This gives equal weight to the 2 predictors.
+spsub$Recession_Probable <- factor(p2 + p3)
+
+ggplot(aes(x = Date, y = Price), 
+       data = spsub ) +
+  geom_point( aes(y=Price, color=Recession_Probable ) ) +
+  scale_y_log10() +
+  scale_x_date(date_labels = "%b %y") +
+  annotate("rect", xmin= rdfSubset$Start, xmax= rdfSubset$End, ymin= spmin, 
+           ymax = spmax, fill="black", alpha = .10) +
+  ggtitle("S&P 500 Stock Index and Recession Predictions") +
+  labs(x="Date (Month-Year)", y="Adjusted Closing Price ($) on log scale") +
+  scale_color_manual(name ="Recession\nLikelihood", 
+                     labels = c("High","Medium", "Low"), 
+                     values = c("red","orange","darkgreen")) +
+  theme(legend.position = c(.9,.2))
+    
+```
+<br>
+
+### Description Three
+<br>
+This is a plot of the Standard & Poor's 500 (S&P 500), an American stock market index based on the market capitalizations of 500 large companies having common stock listed on the NYSE or NASDAQ. The time periods indicated by the gray bars are U.S. recessions as defined by the research of the National Bureau of Economic Research based on economic (fundamental) indicators not directly related to stock price. Based on a study of the Treasury Spread and Retail Sales (see earlier plots), a "Recession Likelihood" indicator was calculated and used to color the S&P500 price plot. Low Likelihood (green) indicates low expectation of a recession in following months; conversely high (red) or medium (orange) likelihood indicates a recession is imminent in the next few months or is already underway. The plot illustrates that the stock market often falls dramatically (>20% correction or "bear" market) after a recession begins, which underlines the importance of predicting recessions. The Recession Likelihood predictor is reasonably accurate in forecasting recessions in this time period (1970-today) with a minimal number of false positives. In conclusion, monitoring the Recession Likelihood predictor may assist U.S. stock investors, who for instance could adopt a more conservative portfolio when there is a warning of a recession.
+<br>
+
+------
+# References
+<br>
+Federal Reserve Economic Data
+<br>
+Link: https://research.stlouisfed.org
+
+Yahoo Finance
+<br>
+Link: http://finance.yahoo.com
+
+Technical Trade Rules package (TTR)
+<br>
+Link: https://cran.r-project.org/web/packages/TTR/index.html
+
+Wikipedia: Historical U.S. Recessions
+<br>
+Link: https://en.wikipedia.org/wiki/List_of_recessions_in_the_United_States
+
+Smith, Noah. "Economists get closer to spotting recessions." BloombergView website.
+<br>
+Link: http://www.bloombergview.com/articles/2016-01-27/economists-close-in-on-spotting-future-recessions
+<br>
+
+# Reflection
+<br>
+The purpose of my project was to explore and summarize several fundamental U.S. economic health indicators and how they relate to recessions and a stock market index. The indicators I chose were based on economic factors that my reading had indicated might be useful to predict recessions, and thereby predict stock market corrections: retail sales changes, industrial production changes, and treasury rates. 
+
+The first challenge was obtaining the data. I found these sources: Federal Reserve Economic Data website for economic indicators, Yahoo Finance website for S&P500 stock price data, and Wikipedia website for manual creation of a recession dates table. A 2nd challenge was aligning the time series data. For example, the start and end dates for each time series differ but must agree especially for calculating a combined predictor. Also the Yahoo Finance data was in time-reversed (descending) order. A 3rd challenge was making use of time series data effectively. To smooth the data for the purpose of forecasting, we do not wish to smooth by the regular algorithm which would include both future and past time points to contribute to the current value of our predictor. Therefore I required advanced time series algorithms as provided by the TTR package (Technical Trade Rules). This package also was necessary to obtain slopes of time-series curves. A 4th challenge was that it was difficult to research and develop unusual plotting constructs, such as the rectangles which I used to plot the recession intervals. A final challenge I will mention is that it was often difficult to track down the exact plotting feature required in the documentation and other R websites due to the vast variety of options available.
+
+I believe I suceeded in the project to demonstrate that two economic indicators (Retail Sales and Treasury Spread) are useful in predicting recessions as well as major stock market corrections. I also disproved that in the modern era (since 1970) the Industrial Production indicator is useful for predicting recessions, despite evidence of its historical value, which could be understood as the result of a shift away from reliance on heavy industry for economic growth and toward other industries (e.g. high tech and retail).
+
+The future work that would improve my analysis particularly for stock market investors would be to show that by using the Recession Likelihood indicator the investor could rebalance their portfolio and thereby avoid major drawdowns in wealth that occur during recessions.  This could be developed into a market timing indicator, particularly in combination with other factors, for example the signal when S&P500 index crosses below the 10 month simple moving average. There is a general consensus that market timing (i.e. choosing when to sell to avoid drawdowns and buy to partake in gains) is very difficult. Nevertheless this research may show that market timing only in relation to recessions would prove worthwhile.
+<br>
+

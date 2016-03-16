@@ -1,0 +1,13 @@
+References
+
+
+Federal Reserve Economic Data 
+Link: https://research.stlouisfed.org
+Yahoo Finance 
+Link: http://finance.yahoo.com
+Technical Trade Rules package (TTR) 
+Link: https://cran.r-project.org/web/packages/TTR/index.html
+Wikipedia: Historical U.S. Recessions 
+Link: https://en.wikipedia.org/wiki/List_of_recessions_in_the_United_States
+Smith, Noah. “Economists get closer to spotting recessions.” BloombergView website. 
+Link: http://www.bloombergview.com/articles/2016-01-27/economists-close-in-on-spotting-future-recessions 
